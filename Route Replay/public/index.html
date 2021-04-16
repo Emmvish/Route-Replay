@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+   
+   <head>
+
+      <title>Route Replay</title>
+
+      <style>
+          #map_canvas {
+            margin: 2px auto;
+            max-width: 1200px;
+            height: 550px;
+          }
+          button {
+            background: white;
+            font-family: "Times New Roman", Times, serif;
+            font-size: 15px;
+            text-align: center;
+            height: 50px;
+            width: 80px;
+            padding: 5px;
+            border: 2px solid black;
+            cursor: pointer;
+            margin: 2px;
+          }
+          button:disabled {
+            background: blue;
+            color: red;
+            font-family: "Times New Roman", Times, serif;
+            font-size: 15px;
+            text-align: center;
+            height: 50px;
+            width: 80px;
+            padding: 5px;
+            border: 2px solid black;
+            cursor: default;
+            margin: 2px;
+          }
+          #submitBtn {
+            background: white;
+            font-family: "Times New Roman", Times, serif;
+            font-size: 15px;
+            text-align: center;
+            height: 25px;
+            width: 50px;
+            padding: 2px;
+            border: 1px solid black;
+            cursor: pointer;
+            margin: 2px;
+          }
+          p {
+              display: flex;
+              justify-content: center;
+              margin: 5px;
+              font-weight: bold;
+          }
+         #date-picker {
+             display: flex;
+             justify-content: center;
+             margin: 5px;
+         }
+         input {
+             margin: 5px;
+         }
+         h3 {
+            display: flex;
+            justify-content: center;
+            margin: 5px 0;
+         }
+      </style>
+      
+   </head>
+   
+   <body>
+       <h3>Please choose the Date Interval using MM/dd/YYYY format. </h3>
+      <form id="date-picker">
+        <input id="fromDate" type="text" placeholder="From: MM/dd/YYYY"/>
+        <input id="toDate" type="text" placeholder="To: MM/dd/YYYY"/>
+        <button id="submitBtn">Submit</button>
+      </form>
+      <p id="date"></p>
+      <div id ="map_canvas"></div>
+
+      <script type="text/javascript" src="http://maps.google.com/maps/api/js?sensor=true&libraries=geometry">
+      </script>
+
+      <script>
+        
+        var map, marker;
+
+        // To expand the bounds whenever a new marker is added.
+        var bounds;
+
+        // 3 dimensional array to store lists of longitude and latitudes associated with each marker
+        let locations = [];
+        // Stores the times when a marker has to be plotted for the very first time on the map
+        let firstOccurs = [];
+
+        var changeSpeed;
+        let MIN_SPEED = 50; // km/h
+        var speed = 100; // km/h
+        var delay = 100; // ms
+        var stopMarker;
+        var startMarker;
+        var changeStep;
+
+        // Stores list of all timestamps selected during given time interval
+        var dates = [];
+        
+        // Universally stops all motion on map.
+        var stopFlag = false;
+
+        // To store all the markers
+        let markers = [];
+        // Number of markers currently on map
+        let markerNo = 0;
+
+        // Using specific colors for drawing the polylines (showing movement of markers) on map.
+        let colors = ['#000','#fff']
+        // Array of icons - each of these is associated with a marker on map.
+        let icons = ['http://maps.google.com/mapfiles/ms/micons/green.png', 'http://maps.google.com/mapfiles/ms/micons/blue.png']
+
+        const dateMsg = document.querySelector("#date")
+
+        function animateMarker(marker, coords, km_h, route, offset)
+        {
+            let target = 0;
+            var km_h = km_h || 50;
+
+            function goToPoint()
+            {
+                var lat = marker.position.lat();
+                var lng = marker.position.lng();
+                var step = (km_h * 1000 * delay) / 3600000; // in meters
+                
+                var dest = new google.maps.LatLng(
+                coords[target][0], coords[target][1]);
+                
+                var distance =
+                google.maps.geometry.spherical.computeDistanceBetween(
+                dest, marker.position); // in meters
+                
+                var numStep = distance / step;
+                var i = 0;
+                var deltaLat = (coords[target][0] - lat) / numStep;
+                var deltaLng = (coords[target][1] - lng) / numStep;
+
+                var t1, t2;
+
+                dateMsg.textContent = "Playback Time: " + dates[target + offset];
+
+                // Spawning all markers that are supposed to be placed onto map right now.
+                while(dates[target + offset] === firstOccurs[markerNo]){
+                    createMarker(markerNo+1, target);
+                }
+                
+                function moveMarker()
+                {
+                    lat += deltaLat;
+                    lng += deltaLng;
+                    i += step;
+                    
+                    if (i < distance)
+                    {
+                        route.getPath().push(new google.maps.LatLng(lat, lng))
+                        marker.setPosition(new google.maps.LatLng(lat, lng));
+                        if(!stopFlag){
+                            t1 = setTimeout(moveMarker, delay);
+                        }
+                    }
+                    else
+                    {   
+                        route.getPath().push(dest);
+                        marker.setPosition(dest);
+                        target++;
+                        if (target == coords.length){ target = 0; marker.setMap(null); }
+                        t2 = setTimeout(goToPoint, delay, 0);
+                    }
+                    changeStep = (op)=>{
+                        clearTimeout(t1)
+                        clearTimeout(t2)
+                        if(op === "+"){
+                            if(i>=distance){
+                                goToPoint();
+                                // target++;
+                            } else {
+                                moveMarker();
+                            }
+                        } else {
+                            if((i<=0)){
+                                alert("You cannot trace the path backwards beyond this point!")
+                            } else {
+                                i -= 2*step;
+                                lat -= 2*deltaLat;
+                                lng -= 2*deltaLng;
+                                let p = route.getPath();
+                                p.pop();
+                                p.pop();
+                                route.setPath(p);
+                                moveMarker();
+                            }
+                        }
+                    }
+                }
+                moveMarker()
+                
+                stopMarker = ()=>{
+                    if(!stopFlag){
+                        stopFlag = true;
+                    }
+                }
+                startMarker = ()=>{
+                    if(stopFlag){
+                        stopFlag = false;
+                        moveMarker();
+                    }
+                }
+                changeSpeed = ()=>{
+                    km_h = speed;
+                    clearTimeout(t1);
+                    clearTimeout(t2);
+                    goToPoint()
+                }
+            }
+            goToPoint();
+        }
+
+        function initialize()
+        {
+            var myOptions = {
+                zoom: 16,
+                center: new google.maps.LatLng(locations[0][0][0], locations[0][0][1]),
+                mapTypeId: google.maps.MapTypeId.ROADMAP
+            };
+
+            map = new google.maps.Map(document.getElementById("map_canvas"), myOptions);
+
+            var btnStop = document.createElement('button');
+            btnStop.id = "btnStop"
+            btnStop.innerHTML = 'PAUSE';
+            google.maps.event.addDomListener(btnStop, 'click', function(event) {
+                document.getElementById("btnStop").disabled = true;
+                document.getElementById("btnStart").disabled = false;
+                stopMarker();
+            });
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(btnStop);
+
+            var btnStart = document.createElement('button');
+            btnStart.id = "btnStart"
+            btnStart.innerHTML = 'START';
+            btnStart.disabled = true;
+            google.maps.event.addDomListener(btnStart, 'click', function(event) {
+                document.getElementById("btnStart").disabled = true;
+                document.getElementById("btnStop").disabled = false;
+                startMarker();
+            });
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(btnStart);
+
+            var speedUp = document.createElement('button');
+            speedUp.id = "btnSpeedUp"
+            speedUp.innerHTML = 'Increase Speed';
+            google.maps.event.addDomListener(speedUp, 'click', function(event) {
+                if(!stopFlag){
+                    speed += MIN_SPEED;
+                    changeSpeed();
+                } else {
+                    alert("Please RE-START your Vehicle before Increasing its Speed!")
+                }
+            });
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(speedUp);
+        
+            var speedDown = document.createElement('button');
+            speedDown.id = "btnSpeedDown"
+            speedDown.innerHTML = 'Decrease Speed';
+            google.maps.event.addDomListener(speedDown, 'click', function(event) {
+                if(!stopFlag){
+                    if(speed > MIN_SPEED){
+                        speed -= MIN_SPEED;
+                        changeSpeed();
+                    } 
+                    else {
+                        alert("This is the MINIMUM Possible Speed!")
+                    } 
+                } else {
+                    alert("Please RE-START your Vehicle before Decreasing its Speed!")
+                }
+            });
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(speedDown);
+            
+            var stepUp = document.createElement('button');
+            stepUp.id = "btnStepUp"
+            stepUp.innerHTML = 'Step UP';
+            google.maps.event.addDomListener(stepUp, 'click', function(event) {
+                document.getElementById("btnStop").disabled = true;
+                document.getElementById("btnStart").disabled = false;
+                stopMarker();
+                changeStep("+")
+            });
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(stepUp);
+            
+            var stepDown = document.createElement('button');
+            stepDown.id = "btnStepDown"
+            stepDown.innerHTML = 'Step DOWN';
+            google.maps.event.addDomListener(stepDown, 'click', function(event) {
+                    document.getElementById("btnStop").disabled = true;
+                    document.getElementById("btnStart").disabled = false;
+                    stopMarker();
+                    changeStep("-") 
+            });
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(stepDown);
+        }
+
+        function createMarker(i, offset){
+            marker = new google.maps.Marker({
+                position: new google.maps.LatLng(locations[i][0][0], locations[i][0][1]),
+                icon: icons[i],
+                map: map
+            });
+            
+            // Add centre position of newly created marker to bounds object.
+            bounds.extend(new google.maps.LatLng(locations[i][0][0], locations[i][0][1]))
+
+            // Adjust ZOOM value to fit all markers on the visible portion of map.
+            map.fitBounds(bounds);
+
+            let route = new google.maps.Polyline({
+                                            path: [],
+                                            geodesic : true,
+                                            strokeColor: colors[i],
+                                            strokeOpacity: 1.0,
+                                            strokeWeight: 2,
+                                            editable: false,
+                                            map:map
+                                        });
+
+            google.maps.event.addListenerOnce(map, 'idle', function()
+            {
+                animateMarker(marker, locations[i], speed, route, offset);
+            });
+
+            markers.push(marker);
+
+            markerNo++;
+        }
+         
+      </script>
+
+      <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+      <script>
+
+        const form = document.querySelector("form");
+        const fromDate = document.querySelector("#fromDate")
+        const toDate = document.querySelector("#toDate")
+        form.addEventListener("submit", (e)=>{
+          e.preventDefault();
+          fd = fromDate.value
+          td = toDate.value
+          fromDate.value = "";
+          toDate.value = "";
+
+          //   Sending request to server to fetch JSON Parsed List of CSV file documents.
+          axios.post("http://localhost:3000/locations",{fd, td}).then((res)=>{
+            if(res.data.error){
+                return alert(res.data.error);
+            }
+            
+            // Reset global variables to default values before proceeding
+            bounds = new google.maps.LatLngBounds();
+            locations = [];
+            speed = 100;
+            delay = 100;
+            stopFlag = false;
+            dates = [];
+            n = 1;
+            markerNo = 0;
+            firstOccurs = res.data.firstOccurrences;
+
+            res.data.locations.forEach((part)=>{
+                let partArr = [];
+                part.forEach((doc)=>{
+                    partArr.push([doc.lat, doc.long])
+                })
+                locations.push(partArr);
+            })
+            dates = res.data.dates;
+            initialize();
+            createMarker(0, 0);
+            document.getElementById("map_canvas").style.display = "block"
+          })
+      })
+        
+      </script>
+   </body>
+   
+</html>

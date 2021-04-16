@@ -1,0 +1,16 @@
+{
+  "name": "gps",
+  "version": "1.0.0",
+  "description": "brands-on-roads",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node src/server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "csvtojson": "^2.0.10",
+    "express": "^4.17.1"
+  }
+}
